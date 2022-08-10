@@ -5,11 +5,13 @@ mod interceptor;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().init();
+
     // Create an interceptor, and turn it into a *service* that gets added to the root router.
     //
     // This WORKS.
     let interceptor_service =
-        Interceptor::default().intercept("/intercept-service", intercept_service);
+        Interceptor::with_name("service").intercept("/intercept-service", intercept_service);
     let nest_service =
         interceptor_service.into_service(axum::routing::any(|| async { "fallback" }));
 
@@ -17,7 +19,8 @@ async fn main() {
     // fine, but when added via a Router, it doesn't work.
     //
     // THIS IS WHAT DOES NOT WORK.
-    let nested_interceptor = Interceptor::default().intercept("/intercept-nest", intercept_nest);
+    let nested_interceptor =
+        Interceptor::with_name("nested").intercept("/intercept-nest", intercept_nest);
     let nest_router = Router::new()
         .route("/regular", get(regular))
         .layer(nested_interceptor);
@@ -25,7 +28,8 @@ async fn main() {
     // Create an interceptor, and add it via `.layer` to the root Router.
     //
     // This WORKS.
-    let root_interceptor = Interceptor::default().intercept("/intercept-root", intercept_root);
+    let root_interceptor =
+        Interceptor::with_name("root").intercept("/intercept-root", intercept_root);
 
     let root_router = Router::new()
         .nest("/nest-service", nest_service) // works

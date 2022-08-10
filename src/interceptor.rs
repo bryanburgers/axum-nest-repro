@@ -9,12 +9,14 @@ type Response = http::Response<axum::body::BoxBody>;
 
 // My actual interceptor is more complicated, used for parsing and dispatching OData-like URLs.
 pub struct Interceptor<B> {
+    name: String,
     interceptions: HashMap<String, BoxCloneService<Request<B>, Response, Infallible>>,
 }
 
 impl<B> Clone for Interceptor<B> {
     fn clone(&self) -> Self {
         Self {
+            name: self.name.clone(),
             interceptions: self.interceptions.clone(),
         }
     }
@@ -36,10 +38,13 @@ impl<B> Interceptor<B>
 where
     B: Send + 'static,
 {
-    pub fn new() -> Self {
+    pub fn with_name(name: impl ToString) -> Self {
         let interceptions = HashMap::new();
 
-        Self { interceptions }
+        Self {
+            name: name.to_string(),
+            interceptions,
+        }
     }
 
     pub fn intercept<H, T>(mut self, entity: impl ToString, handler: H) -> Self
@@ -62,24 +67,15 @@ where
     }
 }
 
-impl<B> Default for Interceptor<B>
-where
-    B: Send + 'static,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub struct InterceptorService<B> {
-    router: Interceptor<B>,
+    interceptor: Interceptor<B>,
     next: BoxCloneService<Request<B>, Response, Infallible>,
 }
 
 impl<B> Clone for InterceptorService<B> {
     fn clone(&self) -> Self {
         Self {
-            router: self.router.clone(),
+            interceptor: self.interceptor.clone(),
             next: self.next.clone(),
         }
     }
@@ -93,7 +89,7 @@ impl<B> InterceptorService<B> {
     {
         let service = BoxCloneService::new(next);
         Self {
-            router,
+            interceptor: router,
             next: service,
         }
     }
@@ -115,7 +111,8 @@ impl<B> Service<Request<B>> for InterceptorService<B> {
     }
 
     fn call(&mut self, req: Request<B>) -> Self::Future {
-        if let Some(interception) = self.router.interceptions.get(req.uri().path()) {
+        tracing::info!(message = "Service::call", name = %self.interceptor.name, uri = %req.uri(), );
+        if let Some(interception) = self.interceptor.interceptions.get(req.uri().path()) {
             return Oneshot::new(interception.clone(), req);
         }
 
